@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[16]:
+# In[1]:
 
 
 """
@@ -18,7 +18,7 @@ Optimizations:
 """
 
 
-# In[17]:
+# In[2]:
 
 
 import pandas as pd
@@ -29,7 +29,7 @@ import timeit
 from IPython.display import clear_output
 
 
-# In[18]:
+# In[3]:
 
 
 def get_coords(a, data):
@@ -53,12 +53,11 @@ class BeerTour:
         return a
     
     def __init__(self):
-        beers = pd.read_csv("csv_data/beers.csv")
-        breweries = pd.read_csv("csv_data/breweries.csv")
-        categories = pd.read_csv("csv_data/categories.csv")
-        geocodes = pd.read_csv("csv_data/geocodes.csv")
-        geocodes = geocodes.set_index('id')
-        styles = pd.read_csv("csv_data/styles.csv")
+        self.beers = pd.read_csv("csv_data/beers.csv").set_index('brewery_id')
+        self.breweries = pd.read_csv("csv_data/breweries.csv").set_index('id')
+        self.categories = pd.read_csv("csv_data/categories.csv")
+        geocodes = pd.read_csv("csv_data/geocodes.csv").set_index('id')
+        self.styles = pd.read_csv("csv_data/styles.csv").set_index('id')
         coords = geocodes[['latitude', 'longitude']]
         
         # Add home location
@@ -121,21 +120,22 @@ class BeerTour:
 
 
 
-# In[19]:
-
-
-# Satisfy requirement to store data into a DB
-#from sqlalchemy import create_engine
-#env.coords.to_sql('breweries', con=engine)
-
-
-# In[20]:
+# In[4]:
 
 
 env = BeerTour()
 
 
-# In[21]:
+# In[5]:
+
+
+# Satisfy requirement to store data into a DB
+#from sqlalchemy import create_engine
+#engine = create_engine('sqlite://', echo=False)
+#env.coords.to_sql('breweries', con=engine, index=False)
+
+
+# In[6]:
 
 
 class random_halo():
@@ -172,7 +172,7 @@ class random_halo():
         return next_id
 
 
-# In[22]:
+# In[7]:
 
 
 def fly(max_dist = 2000):
@@ -190,33 +190,53 @@ def fly(max_dist = 2000):
     return visited, agent.km, reward
 
 
-# In[23]:
+# In[ ]:
 
 
 max_visited = 0
 best_res = ""
 t_run = timeit.default_timer()
 fly_data = []
-for i in range(5000):
+for i in range(500):
     t = timeit.default_timer()
     visited, km, reward = fly()
     fly_data.append([visited, km, reward])
     t = timeit.default_timer() - t
+    
+    # Parse out total unique beer styles collected
+    style_ids = env.beers.loc[visited]['style_id'] # all styles visited
+    style_ids = style_ids.dropna() # drop beers for which style is unknown
+    style_ids = style_ids[style_ids != -1] # drop -1s 
+    collected_styles = env.styles.loc[style_ids]
+    collected_styles = collected_styles.drop_duplicates()
+
     res = "Max: %d Visited %d, Travelled: %f Reward: %f Done in %fs" %(max_visited, len(visited), km, reward, t)
-#    if (i % 10 == 0):
-#        #clear_output()
-#        print(res)
-    if len(visited) > max_visited:
-        max_visited = len(visited)
-        best_res = res
+    if (i % 50 == 0):
+        #clear_output()
+        print(res)
+    
+    # Maximize Beer styles collected
+    if len(collected_styles) > max_visited:
+        max_visited = len(collected_styles)
+        best_res = (visited, km, collected_styles)
         
 t_run = timeit.default_timer() - t_run
-print(len(best_res)*"=")
-print(best_res)
 print("Time: %fs" % t_run)
 
 
-# In[ ]:
+# In[9]:
+
+
+l = "Visited %d breweries. Distance Travelled: %f " % (len(best_res[0]), best_res[1])
+print(len(l)*"=")
+print(l)
+styles = list(best_res[2]['style_name'])
+print("Beer Styles Collected: %d" % len(styles))
+for style in styles:
+    print("    => %s" % style)
+
+
+# In[10]:
 
 
 fly_df = pd.DataFrame(fly_data)
