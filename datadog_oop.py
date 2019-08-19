@@ -1,4 +1,4 @@
-
+#!/usr/bin/env python
 # coding: utf-8
 
 # In[1]:
@@ -42,17 +42,33 @@ def dist_coord(x,y):
     return h
 
 def dist_id(x, y, data):
-    return dist_coord(get_coords(x, data), get_coords(y, data))
+    """
+    Why did I do it this way?
+    """
+    if type(data) == pd.core.frame.DataFrame:
+        return dist_coord(get_coords(x, data), get_coords(y, data))
+    if type(data) == BeerTour: 
+        x_id = int(np.where(env.ids_np == x)[0])
+        y_id = int(np.where(env.ids_np == y)[0])
+        x = data.lat_np[x_id], data.lon_np[x_id]
+        y = data.lat_np[y_id], data.lon_np[y_id]
+        return dist_coord(x, y)
 
 class BeerTour:
+    def get_coords_np(a):
+        i = ids_np[a]
+        return (lat_np[i], lon_np[i])
+        
     def get_neighbors(self, idx, data):
         # apply lambda to return df containing distances between brewery idx and all other breweries
         # Sorted nearest to furthest
+        # TODO convert to use numpy
         a = pd.DataFrame(data.apply(lambda x: dist_coord(data.loc[idx], x), axis=1).sort_values())
         a.columns = ["distance to id %d" % idx]
         return a
     
-    def __init__(self):
+    def __init__(self, lat, lon, max_km):
+        self.max_km = max_km
         self.beers = pd.read_csv("csv_data/beers.csv").set_index('brewery_id')
         self.breweries = pd.read_csv("csv_data/breweries.csv").set_index('id')
         self.categories = pd.read_csv("csv_data/categories.csv")
@@ -61,16 +77,21 @@ class BeerTour:
         coords = geocodes[['latitude', 'longitude']]
         
         # Add home location
-        home = pd.Series({'latitude': 51.355468, 'longitude': 11.100790 }, name=0)
+        home = pd.Series({'latitude': lat, 'longitude': lon }, name=0)
         coords = coords.append(home)
         self.coords = coords.sort_index()
         
         # reduce candidates to 1/2 fuel
         neigh = self.get_neighbors(0, coords)
-        a = neigh[self.get_neighbors(0, coords) < 1000] # TODO fix as param
+        a = neigh[self.get_neighbors(0, coords) < (max_km/2)] # TODO fix as param
         a = a.dropna()
         ids = a.index
         coords = coords.loc[ids]
+        
+        # Convert to umpy arrays for faster access
+        self.lat_np = np.array(list(coords['latitude']))
+        self.lon_np = np.array(list(coords['longitude']))
+        self.ids_np = np.array(list(coords.index))
         
         # make neighbor list
         t = timeit.default_timer()
@@ -85,12 +106,11 @@ class BeerTour:
             #clear_output()
             #print("Computing neighbor list for id %d" % idxs)
             neigh_list.append((n_nearest_neigh(idxs, coords)))
-            
+        self.nlist_np = np.array(neigh_list)    
         ndf = pd.DataFrame(neigh_list)
         ndf.index = coord_idx
         coords['neighbors'] = neigh_list
-        coords
-        mem = len(coords) ** 2 * 8 / 1000
+        mem = len(coords) ** 2 * 8 / (max_km/2)
         print("Memory required for neighbor list %dkB" % mem)
 
         t = timeit.default_timer() - t
@@ -107,8 +127,8 @@ class BeerTour:
     def take_action(self, next_node, fuel):
         # Reward outward movement when fuel > 50%
         # Reward inward movement when fuel > 50%
-        dist_to_home_current = dist_id(0, self.pos, self.coords) 
-        dist_to_home_next = dist_id(0, next_node, self.coords) 
+        dist_to_home_current = dist_id(0, self.pos, self) 
+        dist_to_home_next = dist_id(0, next_node, self) 
         inward = dist_to_home_current > dist_to_home_next
         self.state = next_node
         if fuel < 0.5 and inward:
@@ -120,32 +140,65 @@ class BeerTour:
 
 
 
-# In[4]:
-
-
-env = BeerTour()
-
-
 # In[5]:
 
 
+if __name__ == "__main__":
+    if len(sys.argv) < 4:
+        print("too few args.. running with default")
+        env = BeerTour(51.355468, 11.100790, 2000)
+else:   
+    import sys
+    lat = int(sys.argv[1])
+    long = int(sys.argv[2])
+    iters = int(sys.argv[3])
+    env = BeerTour(lat, long, iters)
+
+
+# In[27]:
+
+
 # Satisfy requirement to store data into a DB
-#from sqlalchemy import create_engine
-#engine = create_engine('sqlite://', echo=False)
-#env.coords.to_sql('breweries', con=engine, index=False)
+# https://stackoverflow.com/questions/18621513/python-insert-numpy-array-into-sqlite3-database
+import sqlite3
+import io
+conn = sqlite3.connect('beerdb.sqlite')
+cur = conn.cursor()
+
+
+
+def adapt_array(arr):
+    """
+    http://stackoverflow.com/a/31312102/190597 (SoulNibbler)
+    """
+    out = io.BytesIO()
+    np.save(out, arr)
+    out.seek(0)
+    return sqlite3.Binary(out.read())
+sqlite3.register_adapter(np.ndarray, adapt_array)
+
+
+cur.execute("create table beer (arr array)")
+cur.execute("insert into beer (arr) values (?)", (env.lat_np, ))
+
+
+conn.close()
 
 
 # In[6]:
 
 
 class random_halo():
-    def __init__(self, env, max_dist = 2000):
+    def __init__(self, env, max_dist):
         self.coords = env.coords
+        self.nlist = env.nlist_np
         self.max_dist = max_dist
         self.km = 0
         
     def get_next_id(self, curr, visited):          
-        neigh = self.coords.loc[curr]['neighbors'] # neighbor list for current id
+        #neigh = self.coords.loc[curr]['neighbors'] # neighbor list for current id
+        i = int(np.where(env.ids_np == curr)[0])
+        neigh = env.nlist_np[i]
         try_count = 0     
         # this is where decision happens
         radius = 3 # start with this sized halo
@@ -159,9 +212,9 @@ class random_halo():
             if (try_count > radius**2): radius+=1
                 
         # Check if next_id is within available range, if not go home
-        dist_next = dist_id(curr, next_id, env.coords)
-        dist_next_home = dist_id(next_id, 0, env.coords)
-        dist_home = dist_id(curr, 0, env.coords)
+        dist_next = dist_id(curr, next_id, env)
+        dist_next_home = dist_id(next_id, 0, env)
+        dist_home = dist_id(curr, 0, env)
         
         if dist_next + dist_next_home < (self.max_dist - self.km):
             self.km += dist_next
@@ -176,7 +229,7 @@ class random_halo():
 
 
 def fly(max_dist = 2000):
-    agent = random_halo(env)
+    agent = random_halo(env, max_dist)
     visited = []
     curr = 0
     reward = 0
@@ -190,14 +243,14 @@ def fly(max_dist = 2000):
     return visited, agent.km, reward
 
 
-# In[ ]:
+# In[8]:
 
 
-max_visited = 0
+maxout = 0
 best_res = ""
 t_run = timeit.default_timer()
 fly_data = []
-for i in range(500):
+for i in range(env.max_km):
     t = timeit.default_timer()
     visited, km, reward = fly()
     fly_data.append([visited, km, reward])
@@ -210,15 +263,22 @@ for i in range(500):
     collected_styles = env.styles.loc[style_ids]
     collected_styles = collected_styles.drop_duplicates()
 
-    res = "Max: %d Visited %d, Travelled: %f Reward: %f Done in %fs" %(max_visited, len(visited), km, reward, t)
+    res = "Max: %d Visited %d, Travelled: %f Reward: %f Done in %fs" %(maxout, len(visited), km, reward, t)
     if (i % 50 == 0):
         #clear_output()
         print(res)
-    
+        
+    maximize = 2
     # Maximize Beer styles collected
-    if len(collected_styles) > max_visited:
-        max_visited = len(collected_styles)
+    if maximize == 0: maxtest = len(collected_styles)
+    if maximize == 1: maxtest = len(visited)
+    if maximize == 2: maxtest = len(collected_styles) * len(visited)
+        
+    if maxtest > maxout:
+        maxout = maxtest
         best_res = (visited, km, collected_styles)
+       
+        
         
 t_run = timeit.default_timer() - t_run
 print("Time: %fs" % t_run)
