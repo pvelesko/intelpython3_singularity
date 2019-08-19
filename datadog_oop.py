@@ -140,22 +140,21 @@ class BeerTour:
 
 
 
-# In[5]:
+# In[4]:
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print("too few args.. running with default")
-        env = BeerTour(51.355468, 11.100790, 2000)
+import sys
+if len(sys.argv) < 4:
+    print("too few args.. running with default")
+    env = BeerTour(51.355468, 11.100790, 2000)
 else:   
-    import sys
     lat = int(sys.argv[1])
     long = int(sys.argv[2])
     iters = int(sys.argv[3])
     env = BeerTour(lat, long, iters)
 
 
-# In[27]:
+# In[5]:
 
 
 # Satisfy requirement to store data into a DB
@@ -185,7 +184,7 @@ cur.execute("insert into beer (arr) values (?)", (env.lat_np, ))
 conn.close()
 
 
-# In[6]:
+# In[ ]:
 
 
 class random_halo():
@@ -225,7 +224,7 @@ class random_halo():
         return next_id
 
 
-# In[7]:
+# In[ ]:
 
 
 def fly(max_dist = 2000):
@@ -243,7 +242,7 @@ def fly(max_dist = 2000):
     return visited, agent.km, reward
 
 
-# In[8]:
+# In[ ]:
 
 
 maxout = 0
@@ -283,8 +282,11 @@ for i in range(env.max_km):
 t_run = timeit.default_timer() - t_run
 print("Time: %fs" % t_run)
 
+with open('route.csv', 'a') as f:
+    f.write(best_res)
 
-# In[9]:
+
+# In[ ]:
 
 
 l = "Visited %d breweries. Distance Travelled: %f " % (len(best_res[0]), best_res[1])
@@ -296,10 +298,26 @@ for style in styles:
     print("    => %s" % style)
 
 
-# In[10]:
+# In[ ]:
 
 
 fly_df = pd.DataFrame(fly_data)
 with open('fly_data.csv', 'a') as f:
     fly_df.to_csv(f, header=False)
+
+
+# In[ ]:
+
+
+import basemap
+m = Basemap(llcrnrlon=lon_min,
+            llcrnrlat=lat_min,
+            urcrnrlon=lon_max,
+            urcrnrlat=lat_max,
+            lat_0=(lat_max - lat_min)/2,
+            lon_0=(lon_max-lon_min)/2,
+            projection='merc',
+            resolution = 'h',
+            area_thresh=10000.,
+            )
 
