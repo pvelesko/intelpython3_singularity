@@ -159,29 +159,29 @@ else:
 
 # Satisfy requirement to store data into a DB
 # https://stackoverflow.com/questions/18621513/python-insert-numpy-array-into-sqlite3-database
-import sqlite3
-import io
-conn = sqlite3.connect('beerdb.sqlite')
-cur = conn.cursor()
-
-
-
-def adapt_array(arr):
-    """
-    http://stackoverflow.com/a/31312102/190597 (SoulNibbler)
-    """
-    out = io.BytesIO()
-    np.save(out, arr)
-    out.seek(0)
-    return sqlite3.Binary(out.read())
-sqlite3.register_adapter(np.ndarray, adapt_array)
-
-
-cur.execute("create table beer (arr array)")
-cur.execute("insert into beer (arr) values (?)", (env.lat_np, ))
-
-
-conn.close()
+#import sqlite3
+#import io
+#conn = sqlite3.connect('beerdb.sqlite')
+#cur = conn.cursor()
+#
+#
+#
+#def adapt_array(arr):
+#    """
+#    http://stackoverflow.com/a/31312102/190597 (SoulNibbler)
+#    """
+#    out = io.BytesIO()
+#    np.save(out, arr)
+#    out.seek(0)
+#    return sqlite3.Binary(out.read())
+#sqlite3.register_adapter(np.ndarray, adapt_array)
+#
+#
+#cur.execute("create table beer (arr array)")
+#cur.execute("insert into beer (arr) values (?)", (env.lat_np, ))
+#
+#
+#conn.close()
 
 
 # In[ ]:
